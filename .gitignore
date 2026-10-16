@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+# app source and client mapping are committed only inside src.enc (tools/pack.py)
+/src/app.html
+/src/js/
+/src/mapping.json
+/src/house_setup.md
