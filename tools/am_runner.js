@@ -53,6 +53,14 @@
         await amP(a.id, { creative: { creative_id: nc.id } });
       } catch (e) { warnings.push(a.name + ': UTMs still say ' + j.from.name + ' (' + String(e.message).slice(0, 90) + ')'); }
     }
+    if (j.live !== false) {
+      // copy was made paused; turn on what was on last month so it starts by itself on the 1st
+      let onSets = null, onAds = null;
+      try { onSets = new Set(((await amG(j.src + '/adsets', { fields: 'name,configured_status', limit: '100' })).data || []).filter(s => s.configured_status === 'ACTIVE').map(s => s.name)); onAds = new Set(((await amG(j.src + '/ads', { fields: 'name,configured_status', limit: '100' })).data || []).filter(s => s.configured_status === 'ACTIVE').map(s => s.name)); } catch (e) { onSets = onAds = null; }
+      for (const s of sets) if (!onSets || onSets.has(s.name)) { try { await amP(s.id, { status: 'ACTIVE' }); } catch (e) { warnings.push(s.name + ': ad set not turned on'); } }
+      for (const a of ads) if (!onAds || onAds.has(a.name)) { try { await amP(a.id, { status: 'ACTIVE' }); } catch (e) { warnings.push(a.name + ': ad not turned on'); } }
+      await amP(cid, { status: 'ACTIVE' });
+    }
     return { campaign: cid, warnings };
   }
 
