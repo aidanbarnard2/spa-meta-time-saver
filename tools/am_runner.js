@@ -32,8 +32,15 @@
   }
 
   async function draft(j) {
-    const r = await amP(j.src + '/copies', { deep_copy: true, status_option: 'PAUSED', rename_options: { rename_strategy: 'NO_RENAME' } });
+    // Meta copies fewer than 3 objects per call: campaign, then each ad set into it, then each ad into its ad set (all paused, same names)
+    const NR = { rename_strategy: 'NO_RENAME' };
+    const r = await amP(j.src + '/copies', { deep_copy: false, status_option: 'PAUSED', rename_options: NR });
     const cid = r.copied_campaign_id; if (!cid) throw new Error('Meta did not return the copied campaign');
+    for (const s0 of ((await amG(j.src + '/adsets', { fields: 'id,name', limit: '100' })).data || [])) {
+      const rs = await amP(s0.id + '/copies', { campaign_id: cid, deep_copy: false, status_option: 'PAUSED', rename_options: NR });
+      const nsid = rs.copied_adset_id || rs.id;
+      for (const a0 of ((await amG(s0.id + '/ads', { fields: 'id,name', limit: '100' })).data || [])) await amP(a0.id + '/copies', { adset_id: nsid, status_option: 'PAUSED', rename_options: NR });
+    }
     const upd = { name: j.name }; if (j.cents) upd.lifetime_budget = String(Math.round(j.cents));
     try { await amP(cid, { ...upd, start_time: j.start, stop_time: j.end }); } catch (e) { await amP(cid, upd); }
     const sets = (await amG(cid + '/adsets', { fields: 'id,name', limit: '100' })).data || [];
