@@ -66,7 +66,8 @@ button:disabled{opacity:.6;cursor:wait}
     }catch(e){try{localStorage.removeItem(KEY)}catch(_){}return false}
   }
   window.spaLock={forget:function(){try{localStorage.removeItem(KEY)}catch(e){}}};
-  tryRemembered();
+  // wait until this page has finished loading, otherwise the app gets written into the lock page instead of replacing it
+  if(document.readyState==='complete')tryRemembered();else window.addEventListener('load',function(){tryRemembered()});
   document.getElementById('f').addEventListener('submit',async function(ev){
     ev.preventDefault();
     var btn=document.getElementById('go'),err=document.getElementById('err');
