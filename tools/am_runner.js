@@ -38,7 +38,7 @@
     const r = await amP(j.src + '/copies', { deep_copy: false, status_option: 'PAUSED', rename_options: NR });
     const cid = r.copied_campaign_id; if (!cid) throw new Error('Meta did not return the copied campaign');
     for (const s0 of ((await amG(j.src + '/adsets', { fields: 'id,name', limit: '100' })).data || [])) {
-      const rs = await amP(s0.id + '/copies', { campaign_id: cid, deep_copy: false, status_option: 'PAUSED', rename_options: NR });
+      const rs = await amP(s0.id + '/copies', { campaign_id: cid, deep_copy: false, status_option: 'PAUSED', rename_options: NR, start_time: j.start, end_time: j.end });
       const nsid = rs.copied_adset_id || rs.id;
       for (const a0 of ((await amG(s0.id + '/ads', { fields: 'id,name,tracking_specs,conversion_domain,creative{id}', limit: '100' })).data || [])) {
         try { await amP(a0.id + '/copies', { adset_id: nsid, status_option: 'PAUSED', rename_options: NR }); }
@@ -58,7 +58,7 @@
     const upd = { name: j.name }; if (j.cents) upd.lifetime_budget = String(Math.round(j.cents));
     try { await amP(cid, { ...upd, start_time: j.start, stop_time: j.end }); } catch (e) { await amP(cid, upd); }
     const sets = (await amG(cid + '/adsets', { fields: 'id,name', limit: '100' })).data || [];
-    for (const s of sets) await amP(s.id, { name: swap(s.name, j.from, j.to), start_time: j.start, end_time: j.end });
+    for (const s of sets) await amP(s.id, { name: swap(s.name, j.from, j.to) });
     const ads = (await amG(cid + '/ads', { fields: 'id,name,creative{id}', limit: '100' })).data || [];
     const warnings = [];
     for (const a of ads) {
