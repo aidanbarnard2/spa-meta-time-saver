@@ -1,0 +1,13 @@
+name: Probe dealer sites
+on:
+  workflow_dispatch:
+  push:
+    paths: ['tools/probe_sites.py', 'tools/probe_urls.txt', '.github/workflows/probe.yml']
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 tools/probe_sites.py tools/probe_urls.txt | tee -a "$GITHUB_STEP_SUMMARY"
