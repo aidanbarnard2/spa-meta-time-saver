@@ -15,7 +15,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from spa_crypt import ROOT, decrypt, derive_key, encrypt, password_from_env  # noqa: E402
 
-PRIVATE = ["src/app.html", "src/js", "src/mapping.json", "src/house_setup.md"]
+PRIVATE = ["src/app.html", "src/js", "src/mapping.json", "src/house_setup.md", "src/accounts.json"]
 ENC = ROOT / "src.enc"
 
 

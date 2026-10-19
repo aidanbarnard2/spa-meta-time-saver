@@ -25,9 +25,11 @@ def build_app(mapping: dict) -> str:
     js = "\n".join(p.read_text() for p in sorted((SRC / "js").glob("*.js")))
     if "</script" in js.lower():
         raise SystemExit("JS contains </script, which would break the page")
+    accts = SRC / "accounts.json"
     config = {
         "built": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "mapping": mapping,
+        "accounts": json.loads(accts.read_text()) if accts.exists() else [],
     }
     cfg = json.dumps(config, separators=(",", ":")).replace("</", "<\\/")
     logo = base64.b64encode((SRC / "logo.webp").read_bytes()).decode()
