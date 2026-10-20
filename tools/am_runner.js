@@ -57,7 +57,9 @@
         if (j.house && s.targeting && ads0[0]) {
           const c0 = await amG(ads0[0].creative.id, { fields: 'object_story_spec' }); const o = c0.object_story_spec || {};
           const size = ((ads0[0].name + ' ' + s.name).match(/\b(VT|SQ|HZ)\b/) || [])[1];
-          const kind = (o.link_data && o.link_data.child_attachments) ? 'carousel' : o.video_data ? (size === 'VT' ? 'VT' : (size ? 'feed' : null)) : 'banner';
+          let kind = (o.link_data && o.link_data.child_attachments) ? 'carousel' : o.video_data ? (size === 'VT' ? 'VT' : (size ? 'feed' : null)) : null;
+          const ih = (o.link_data || {}).image_hash || (o.photo_data || {}).image_hash;
+          if (!kind && ih) { const im = ((await amG(j.acct + '/adimages', { hashes: [ih], fields: 'hash,width,height' })).data || [])[0]; if (im) kind = Math.abs(im.width - im.height) <= 0.02 * Math.max(im.width, im.height) ? 'banner_sq' : 'banner'; }
           if (kind && j.house[kind]) { const t = JSON.parse(JSON.stringify(s.targeting)); for (const k of ['publisher_platforms', 'facebook_positions', 'instagram_positions', 'audience_network_positions', 'messenger_positions', 'threads_positions', 'whatsapp_positions', 'age_range']) delete t[k]; supd.targeting = Object.assign(t, JSON.parse(JSON.stringify(j.house[kind]))); }
         }
         await amP(nsid, supd);
