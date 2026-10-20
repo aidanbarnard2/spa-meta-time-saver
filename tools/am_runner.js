@@ -46,12 +46,21 @@
     try {
       const upd = { name: j.name }; if (j.cents) upd.lifetime_budget = String(Math.round(j.cents));
       try { await amP(cid, { ...upd, start_time: j.start, stop_time: j.end }); } catch (e) { await amP(cid, upd); }
-      const sets = (await amG(j.src + '/adsets', { fields: 'id,name,configured_status,ads.limit(50){id,name,configured_status,tracking_specs,conversion_domain,creative{id}}', limit: '50' })).data || [];
+      const sets = (await amG(j.src + '/adsets', { fields: 'id,name,configured_status,targeting,ads.limit(50){id,name,configured_status,tracking_specs,conversion_domain,creative{id}}', limit: '50' })).data || [];
       for (const s of sets) {
         const rs = await amP(s.id + '/copies', { campaign_id: cid, deep_copy: false, status_option: live ? 'INHERITED_FROM_SOURCE' : 'PAUSED', rename_options: NR, start_time: j.start, end_time: j.end });
         const nsid = rs.copied_adset_id || rs.id; if (!nsid) throw new Error('Meta did not return the copied ad set for ' + s.name);
-        await amP(nsid, { name: sw(s.name) });
-        for (const a of ((s.ads || {}).data || [])) {
+        // placements always follow the Meta Placements doc (j.house), by the ad's format and size
+        const supd = { name: sw(s.name) };
+        const ads0 = (s.ads || {}).data || [];
+        if (j.house && s.targeting && ads0[0]) {
+          const c0 = await amG(ads0[0].creative.id, { fields: 'object_story_spec' }); const o = c0.object_story_spec || {};
+          const size = ((ads0[0].name + ' ' + s.name).match(/\b(VT|SQ|HZ)\b/) || [])[1];
+          const kind = (o.link_data && o.link_data.child_attachments) ? 'carousel' : o.video_data ? (size === 'VT' ? 'VT' : (size ? 'feed' : null)) : 'banner';
+          if (kind && j.house[kind]) { const t = JSON.parse(JSON.stringify(s.targeting)); for (const k of ['publisher_platforms', 'facebook_positions', 'instagram_positions', 'audience_network_positions', 'messenger_positions', 'threads_positions', 'whatsapp_positions', 'age_range']) delete t[k]; supd.targeting = Object.assign(t, JSON.parse(JSON.stringify(j.house[kind]))); }
+        }
+        await amP(nsid, supd);
+        for (const a of ads0) {
           const c = await amG(a.creative.id, { fields: FC + ',object_story_id,effective_object_story_id' });
           let body;
           if (c.object_story_spec) {
