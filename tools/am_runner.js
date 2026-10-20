@@ -10,6 +10,7 @@
   const amP = async (p, body = {}) => { const fd = new URLSearchParams(); for (const [k, v] of Object.entries(body)) fd.set(k, typeof v === 'string' ? v : JSON.stringify(v)); fd.set('access_token', tok()); const j = await (await fetch(BASE + p, { method: 'POST', body: fd, credentials: 'include' })).json(); if (j.error) throw new Error((j.error.error_user_title ? j.error.error_user_title + ': ' : '') + (j.error.error_user_msg || j.error.message)); return j; };
   const FC = 'id,name,object_story_spec,contextual_multi_ads,degrees_of_freedom_spec,asset_feed_spec,creative_sourcing_spec,url_tags';
   const swap = (s, f, t) => { if (!s) return s; let o = String(s).replace(new RegExp(f.name + '(\\s*)' + f.y, 'gi'), t.name + '$1' + t.y).replace(new RegExp(f.name + '_' + f.y, 'gi'), t.name + '_' + t.y); return o; };
+  const utmMonth = (tags, to) => tags ? String(tags).replace(/(?<![A-Za-z])(January|February|March|April|May|June|July|August|September|October|November|December)(_|%20|\+| )(\d{4})(?!\d)/g, (m, mo, sep) => to.name + sep + to.y) : tags;
   const cleanDof = (dof) => { if (!dof) return dof; const d = JSON.parse(JSON.stringify(dof)); if (d.creative_features_spec && d.creative_features_spec.standard_enhancements) delete d.creative_features_spec.standard_enhancements; return d; };
   const cleanOss = (oss) => { const o = JSON.parse(JSON.stringify(oss)); if (o.video_data && o.video_data.image_hash && o.video_data.image_url) delete o.video_data.image_url; if (o.link_data && o.link_data.image_hash && o.link_data.picture) delete o.link_data.picture; if (o.photo_data && o.photo_data.image_hash && o.photo_data.url) delete o.photo_data.url; return o; };
 
@@ -61,7 +62,7 @@
           } else if (c.effective_object_story_id || c.object_story_id) {
             body = { name: sw(c.name || a.name).slice(0, 100), object_story_id: c.effective_object_story_id || c.object_story_id, contextual_multi_ads: { enroll_status: 'OPT_OUT' } };
           } else throw new Error('Can’t read the creative of ' + a.name);
-          if (c.url_tags) body.url_tags = sw(c.url_tags);
+          if (c.url_tags) body.url_tags = utmMonth(c.url_tags, j.to);
           const nc = await amP(j.acct + '/adcreatives', body);
           const ad = { name: sw(a.name), adset_id: nsid, creative: { creative_id: nc.id }, status: live && a.configured_status === 'ACTIVE' ? 'ACTIVE' : 'PAUSED' };
           if (a.tracking_specs) ad.tracking_specs = a.tracking_specs;
