@@ -1,8 +1,9 @@
 /* Ads Manager runner for the Meta Time Saver queue.
-   Claude pastes this into an Ads Manager tab (adsmanager.facebook.com) and runs window.__amRun(jobs),
-   where jobs come from SPA_AM.queue() in the dashboard. It uses the signed-in person's own Ads Manager
+   Claude pastes this into an Ads Manager tab (adsmanager.facebook.com), clicks the "Open the Meta Time Saver queue"
+   button it adds (window.__amButton()), which opens the dashboard as a popup and receives the waiting jobs in
+   window.__amJobs; then runs window.__amRun(window.__amJobs) and sends the results back with window.__amReport(results). It uses the signed-in person's own Ads Manager
    session (window.__accessToken), so it can post for Pages the dashboard's system user can't.
-   Results go back to the dashboard with SPA_AM.complete(results). Nothing here stores or sends the token anywhere else. */
+   Nothing here stores or sends the token anywhere else. */
 (function () {
   const BASE = 'https://adsmanager-graph.facebook.com/v23.0/';
   const tok = () => window.__accessToken;
