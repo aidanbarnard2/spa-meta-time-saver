@@ -33,57 +33,49 @@
   }
 
   async function draft(j) {
-    // Meta copies fewer than 3 objects per call: campaign, then each ad set into it, then each ad into its ad set (all paused, same names)
+    // Same steps as the dashboard's own draft: campaign copied paused, each ad set copied into it with next month's dates
+    // (keeping last month's on/off), each ad made fresh with next month's UTMs and multi-advertiser off, campaign switched on last.
+    // Ads Manager can read each ad's music, so music is kept exactly as it was.
     const NR = { rename_strategy: 'NO_RENAME' };
+    const live = j.live !== false;
+    const sw = (x) => swap(x, j.from, j.to);
     const r = await amP(j.src + '/copies', { deep_copy: false, status_option: 'PAUSED', rename_options: NR });
     const cid = r.copied_campaign_id; if (!cid) throw new Error('Meta did not return the copied campaign');
-    for (const s0 of ((await amG(j.src + '/adsets', { fields: 'id,name', limit: '100' })).data || [])) {
-      const rs = await amP(s0.id + '/copies', { campaign_id: cid, deep_copy: false, status_option: 'PAUSED', rename_options: NR, start_time: j.start, end_time: j.end });
-      const nsid = rs.copied_adset_id || rs.id;
-      for (const a0 of ((await amG(s0.id + '/ads', { fields: 'id,name,tracking_specs,conversion_domain,creative{id}', limit: '100' })).data || [])) {
-        try { await amP(a0.id + '/copies', { adset_id: nsid, status_option: 'PAUSED', rename_options: NR }); }
-        catch (e) { // e.g. old creative still carries the retired standard_enhancements: make the ad fresh with the same content
-          const c = await amG(a0.creative.id, { fields: FC });
-          const body = { name: swap(c.name || a0.name, j.from, j.to).slice(0, 100), object_story_spec: cleanOss(c.object_story_spec), contextual_multi_ads: { enroll_status: 'OPT_OUT' } };
-          if (c.degrees_of_freedom_spec) body.degrees_of_freedom_spec = cleanDof(c.degrees_of_freedom_spec);
-          for (const k of ['asset_feed_spec', 'creative_sourcing_spec']) if (c[k]) body[k] = c[k];
-          if (c.url_tags) body.url_tags = swap(c.url_tags, j.from, j.to);
+    const warnings = [];
+    try {
+      const upd = { name: j.name }; if (j.cents) upd.lifetime_budget = String(Math.round(j.cents));
+      try { await amP(cid, { ...upd, start_time: j.start, stop_time: j.end }); } catch (e) { await amP(cid, upd); }
+      const sets = (await amG(j.src + '/adsets', { fields: 'id,name,configured_status,ads.limit(50){id,name,configured_status,tracking_specs,conversion_domain,creative{id}}', limit: '50' })).data || [];
+      for (const s of sets) {
+        const rs = await amP(s.id + '/copies', { campaign_id: cid, deep_copy: false, status_option: live ? 'INHERITED_FROM_SOURCE' : 'PAUSED', rename_options: NR, start_time: j.start, end_time: j.end });
+        const nsid = rs.copied_adset_id || rs.id; if (!nsid) throw new Error('Meta did not return the copied ad set for ' + s.name);
+        await amP(nsid, { name: sw(s.name) });
+        for (const a of ((s.ads || {}).data || [])) {
+          const c = await amG(a.creative.id, { fields: FC + ',object_story_id,effective_object_story_id' });
+          let body;
+          if (c.object_story_spec) {
+            body = { name: sw(c.name || a.name).slice(0, 100), object_story_spec: cleanOss(c.object_story_spec), contextual_multi_ads: { enroll_status: 'OPT_OUT' } };
+            if (c.degrees_of_freedom_spec) body.degrees_of_freedom_spec = cleanDof(c.degrees_of_freedom_spec);
+            body.asset_feed_spec = c.asset_feed_spec || { audios: [{ type: 'opted_out' }] };
+            if (c.creative_sourcing_spec) body.creative_sourcing_spec = c.creative_sourcing_spec;
+          } else if (c.effective_object_story_id || c.object_story_id) {
+            body = { name: sw(c.name || a.name).slice(0, 100), object_story_id: c.effective_object_story_id || c.object_story_id, contextual_multi_ads: { enroll_status: 'OPT_OUT' } };
+          } else throw new Error('Can’t read the creative of ' + a.name);
+          if (c.url_tags) body.url_tags = sw(c.url_tags);
           const nc = await amP(j.acct + '/adcreatives', body);
-          const ad = { name: a0.name, adset_id: nsid, creative: { creative_id: nc.id }, status: 'PAUSED' };
-          if (a0.tracking_specs) ad.tracking_specs = a0.tracking_specs; if (a0.conversion_domain) ad.conversion_domain = a0.conversion_domain;
+          const ad = { name: sw(a.name), adset_id: nsid, creative: { creative_id: nc.id }, status: live && a.configured_status === 'ACTIVE' ? 'ACTIVE' : 'PAUSED' };
+          if (a.tracking_specs) ad.tracking_specs = a.tracking_specs;
+          if (a.conversion_domain) ad.conversion_domain = a.conversion_domain;
           await amP(j.acct + '/ads', ad);
         }
       }
+      if (live) await amP(cid, { status: 'ACTIVE' });
+      return { campaign: cid, warnings };
+    } catch (e) {
+      // leave the half-made copy paused and clearly named so Aidan can delete it (Claude doesn't delete anything)
+      try { await amP(cid, { status: 'PAUSED', name: 'FAILED DRAFT, delete me: ' + j.name }); } catch (e2) { }
+      throw new Error(e.message + ' (a paused half-made copy named "FAILED DRAFT, delete me" is in the account)');
     }
-    const upd = { name: j.name }; if (j.cents) upd.lifetime_budget = String(Math.round(j.cents));
-    try { await amP(cid, { ...upd, start_time: j.start, stop_time: j.end }); } catch (e) { await amP(cid, upd); }
-    const sets = (await amG(cid + '/adsets', { fields: 'id,name', limit: '100' })).data || [];
-    for (const s of sets) await amP(s.id, { name: swap(s.name, j.from, j.to) });
-    const ads = (await amG(cid + '/ads', { fields: 'id,name,creative{id}', limit: '100' })).data || [];
-    const warnings = [];
-    for (const a of ads) {
-      await amP(a.id, { name: swap(a.name, j.from, j.to) });
-      try {
-        const c = await amG(a.creative.id, { fields: FC });
-        const tags = c.url_tags ? swap(c.url_tags, j.from, j.to) : c.url_tags;
-        if (!c.object_story_spec || (tags === c.url_tags && (c.contextual_multi_ads || {}).enroll_status === 'OPT_OUT')) continue;
-        const body = { name: swap(c.name || a.name, j.from, j.to).slice(0, 100), object_story_spec: cleanOss(c.object_story_spec), contextual_multi_ads: { enroll_status: 'OPT_OUT' } };
-        for (const k of ['asset_feed_spec', 'creative_sourcing_spec']) if (c[k]) body[k] = c[k];
-        if (c.degrees_of_freedom_spec) body.degrees_of_freedom_spec = cleanDof(c.degrees_of_freedom_spec);
-        if (tags) body.url_tags = tags;
-        const nc = await amP(j.acct + '/adcreatives', body);
-        await amP(a.id, { creative: { creative_id: nc.id } });
-      } catch (e) { warnings.push(a.name + ': UTMs still say ' + j.from.name + ' (' + String(e.message).slice(0, 90) + ')'); }
-    }
-    if (j.live !== false) {
-      // copy was made paused; turn on what was on last month so it starts by itself on the 1st
-      let onSets = null, onAds = null;
-      try { onSets = new Set(((await amG(j.src + '/adsets', { fields: 'name,configured_status', limit: '100' })).data || []).filter(s => s.configured_status === 'ACTIVE').map(s => s.name)); onAds = new Set(((await amG(j.src + '/ads', { fields: 'name,configured_status', limit: '100' })).data || []).filter(s => s.configured_status === 'ACTIVE').map(s => s.name)); } catch (e) { onSets = onAds = null; }
-      for (const s of sets) if (!onSets || onSets.has(s.name)) { try { await amP(s.id, { status: 'ACTIVE' }); } catch (e) { warnings.push(s.name + ': ad set not turned on'); } }
-      for (const a of ads) if (!onAds || onAds.has(a.name)) { try { await amP(a.id, { status: 'ACTIVE' }); } catch (e) { warnings.push(a.name + ': ad not turned on'); } }
-      await amP(cid, { status: 'ACTIVE' });
-    }
-    return { campaign: cid, warnings };
   }
 
   window.__amResults = window.__amResults || {};
