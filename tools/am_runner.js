@@ -39,7 +39,7 @@
     // Ads Manager can read each ad's music, so music is kept exactly as it was.
     const NR = { rename_strategy: 'NO_RENAME' };
     const live = j.live !== false;
-    const sw = (x) => swap(x, j.from, j.to);
+    const sw = (x) => utmMonth(swap(x, j.from, j.to), j.to);
     const r = await amP(j.src + '/copies', { deep_copy: false, status_option: 'PAUSED', rename_options: NR });
     const cid = r.copied_campaign_id; if (!cid) throw new Error('Meta did not return the copied campaign');
     const warnings = [];
