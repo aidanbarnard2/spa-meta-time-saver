@@ -88,6 +88,33 @@
     }
   }
 
+  /* the queue lives in the dashboard (another site), so a real click here opens the dashboard as a popup and the two pages
+     message each other: the dashboard sends the waiting jobs, and gets the results back to mark them done */
+  const DASH = 'https://aidanbarnard2.github.io';
+  if (!window.__amListening) {
+    window.__amListening = true;
+    window.addEventListener('message', (e) => {
+      if (e.origin !== DASH || !e.data || e.data.spa !== 'am') return;
+      if (e.data.op === 'jobs') window.__amJobs = e.data.jobs || [];
+      if (e.data.op === 'completed') window.__amCompleted = e.data.result;
+    });
+  }
+  window.__amOpenDashboard = function () {
+    window.__amJobs = null; window.__amCompleted = null;
+    const w = window.open(DASH + '/spa-meta-time-saver/#amjobs', 'spa_dash_bridge'); window.__amDash = w;
+    const t = setInterval(() => { if (window.__amJobs || !w || w.closed) return clearInterval(t); try { w.postMessage({ spa: 'am', op: 'jobs' }, DASH); } catch (e) { } }, 1000);
+    return !!w;
+  };
+  window.__amReport = function (results) { window.__amCompleted = null; window.__amDash.postMessage({ spa: 'am', op: 'complete', results }, DASH); return true; };
+  /* a button for Claude to click (a popup needs a real click) */
+  window.__amButton = function () {
+    let b = document.getElementById('spa-am-open'); if (b) b.remove();
+    b = document.createElement('button'); b.id = 'spa-am-open'; b.textContent = 'Open the Meta Time Saver queue';
+    b.style.cssText = 'position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:2147483647;padding:12px 20px;font:600 15px system-ui;background:#1f3a6e;color:#fff;border:0;border-radius:10px;box-shadow:0 4px 18px rgba(0,0,0,.3);cursor:pointer';
+    b.onclick = () => { window.__amOpenDashboard(); b.textContent = 'Queue opened'; setTimeout(() => b.remove(), 1500); };
+    document.body.appendChild(b); return true;
+  };
+
   window.__amResults = window.__amResults || {};
   window.__amRun = async function (jobs) {
     for (const j of jobs) {
