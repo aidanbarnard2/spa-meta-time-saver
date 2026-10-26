@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Saint Paul Agency</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap">
+<style>
+:root{--navy:#0E1830;--royal:#233975;--sky:#5EA6F3;--bg:#EDF1F7;--card:#fff;--ink:#0E1830;--mute:#5b6681;--line:#d7deea;--bad:#C42B1C}
+@media (prefers-color-scheme:dark){:root{--bg:#0b1222;--card:#121b31;--ink:#e8eefb;--mute:#9aa7c4;--line:#24304d}}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{font-family:Poppins,system-ui,-apple-system,"Segoe UI",sans-serif;background:var(--bg);color:var(--ink);display:grid;place-items:center;padding:24px 16px}
+.box{width:100%;max-width:420px;background:var(--card);border:1px solid var(--line);border-radius:18px;padding:32px 28px;box-shadow:0 10px 40px rgba(14,24,48,.08);text-align:center}
+.box img{width:96px;height:96px;object-fit:contain}
+h1{font-size:22px;margin:14px 0 4px;font-weight:700}
+p{color:var(--mute);margin:0 0 22px;font-size:15px}
+label.f{display:block;text-align:left;font-size:14px;font-weight:600;margin-bottom:6px}
+input[type=password]{width:100%;font:inherit;font-size:17px;padding:12px 14px;border:1.5px solid var(--line);border-radius:10px;background:transparent;color:var(--ink)}
+input[type=password]:focus{outline:none;border-color:var(--sky);box-shadow:0 0 0 3px rgba(94,166,243,.25)}
+.rem{display:flex;gap:8px;align-items:center;justify-content:flex-start;margin:14px 0 20px;font-size:14px;color:var(--mute)}
+button{width:100%;font:inherit;font-weight:600;font-size:16px;padding:13px;border:0;border-radius:10px;background:var(--royal);color:#fff;cursor:pointer}
+button:hover{background:var(--navy)}
+button:disabled{opacity:.6;cursor:wait}
+.err{color:var(--bad);font-size:14px;min-height:20px;margin-top:12px}
+</style>
+</head>
+<body>
+<form class="box" id="f" autocomplete="off">
+  <img alt="Saint Paul Agency" src="data:image/webp;base64,{{LOGO}}">
+  <h1>Saint Paul Agency</h1>
+  <p>This page is locked. Enter the team password.</p>
+  <label class="f" for="pw">Password</label>
+  <input id="pw" type="password" autocomplete="current-password" required autofocus>
+  <label class="rem"><input type="checkbox" id="rem" checked> Remember this device for 7 days</label>
+  <button id="go" type="submit">Unlock</button>
+  <div class="err" id="err" role="alert"></div>
+</form>
+<script id="lockcfg" type="application/json">{{LOCK}}</script>
+<script id="payload" type="application/json">{{PAYLOAD}}</script>
+<script>
+(function(){
+  var cfg=JSON.parse(document.getElementById('lockcfg').textContent);
+  var env=JSON.parse(document.getElementById('payload').textContent);
+  var KEY='spa_lock_v1';
+  function b64d(s){var b=atob(s),u=new Uint8Array(b.length);for(var i=0;i<b.length;i++)u[i]=b.charCodeAt(i);return u}
+  function b64e(u){var s='';u=new Uint8Array(u);for(var i=0;i<u.length;i++)s+=String.fromCharCode(u[i]);return btoa(s)}
+  async function derive(pw){
+    var base=await crypto.subtle.importKey('raw',new TextEncoder().encode(pw),'PBKDF2',false,['deriveKey']);
+    return crypto.subtle.deriveKey({name:'PBKDF2',salt:b64d(cfg.salt),iterations:cfg.iterations,hash:'SHA-256'},base,{name:'AES-GCM',length:256},true,['decrypt','encrypt']);
+  }
+  async function open(key){
+    var pt=await crypto.subtle.decrypt({name:'AES-GCM',iv:b64d(env.iv)},key,b64d(env.ct));
+    window.__spaKey=key;
+    var html=new TextDecoder().decode(pt);
+    document.open();document.write(html);document.close();
+  }
+  async function tryRemembered(){
+    try{
+      var s=JSON.parse(localStorage.getItem(KEY)||'null');
+      if(!s||!s.k||Date.now()>s.exp)return false;
+      var key=await crypto.subtle.importKey('raw',b64d(s.k),{name:'AES-GCM'},true,['decrypt','encrypt']);
+      await open(key);return true;
+    }catch(e){try{localStorage.removeItem(KEY)}catch(_){}return false}
+  }
+  window.spaLock={forget:function(){try{localStorage.removeItem(KEY)}catch(e){}}};
+  // wait until this page has finished loading, otherwise the app gets written into the lock page instead of replacing it
+  if(document.readyState==='complete')tryRemembered();else window.addEventListener('load',function(){tryRemembered()});
+  document.getElementById('f').addEventListener('submit',async function(ev){
+    ev.preventDefault();
+    var btn=document.getElementById('go'),err=document.getElementById('err');
+    btn.disabled=true;btn.textContent='Unlocking…';err.textContent='';
+    try{
+      var key=await derive(document.getElementById('pw').value);
+      // check the password opens the page before remembering anything
+      await crypto.subtle.decrypt({name:'AES-GCM',iv:b64d(env.iv)},key,b64d(env.ct));
+      if(document.getElementById('rem').checked){
+        var raw=await crypto.subtle.exportKey('raw',key);
+        try{localStorage.setItem(KEY,JSON.stringify({k:b64e(raw),exp:Date.now()+7*864e5}))}catch(e){}
+      }
+      await open(key);
+    }catch(e){
+      btn.disabled=false;btn.textContent='Unlock';err.textContent='That password didn’t work.';
+    }
+  });
+})();
+</script>
+</body>
+</html>
