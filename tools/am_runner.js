@@ -77,7 +77,9 @@
           if (c.url_tags) body.url_tags = utmMonth(c.url_tags, j.to);
           const nc = await amP(j.acct + '/adcreatives', body);
           const ad = { name: sw(a.name), adset_id: nsid, creative: { creative_id: nc.id }, status: live && a.configured_status === 'ACTIVE' ? 'ACTIVE' : 'PAUSED' };
-          if (a.tracking_specs) ad.tracking_specs = a.tracking_specs;
+          const ts = (a.tracking_specs || []).slice();   // website events on with the client's pixel (QA, Oct 30 2026)
+          if (j.pixel && !ts.some(t => (t.fb_pixel || []).map(String).includes(String(j.pixel)))) ts.unshift({ 'action.type': ['offsite_conversion'], fb_pixel: [String(j.pixel)] });
+          if (ts.length) ad.tracking_specs = ts;
           if (a.conversion_domain) ad.conversion_domain = a.conversion_domain;
           await amP(j.acct + '/ads', ad);
         }
