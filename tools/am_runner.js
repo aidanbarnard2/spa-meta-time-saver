@@ -46,6 +46,27 @@
     return { created: created.id, status: chk.effective_status };
   }
 
+  /* a new caption on any ad (video, banner or carousel), everything else kept: e.g. the November emojis on a copied video */
+  async function recaption(j) {
+    const ad = await amG(j.ad, { fields: 'id,creative{id}' });
+    if (!ad.creative || ad.creative.id !== j.creative) throw new Error('The ad changed since this was queued; re-check it in the dashboard');
+    const old = await amG(j.creative, { fields: FC });
+    if (!old.object_story_spec) throw new Error('This ad is a boosted post; its caption is the post itself');
+    const oss = cleanOss(old.object_story_spec);
+    const part = oss.link_data || oss.video_data || oss.photo_data; if (!part) throw new Error('No caption to change');
+    part.message = j.message; addDisplayLink(oss);
+    const body = { name: String(old.name || j.name).replace(/\s*\|\s*updated.*$/, '').slice(0, 80) + ' | updated ' + new Date().toISOString().slice(0, 10), object_story_spec: oss, contextual_multi_ads: { enroll_status: 'OPT_OUT' } };
+    if (old.degrees_of_freedom_spec) body.degrees_of_freedom_spec = cleanDof(old.degrees_of_freedom_spec);
+    body.asset_feed_spec = old.asset_feed_spec || { audios: [{ type: 'opted_out' }] };
+    if (old.creative_sourcing_spec) body.creative_sourcing_spec = old.creative_sourcing_spec;
+    if (old.url_tags) body.url_tags = fixTagSite(old.url_tags, landingOf(body));
+    const created = await amP(j.acct + '/adcreatives', body);
+    await amP(j.ad, { creative: { creative_id: created.id } });
+    const chk = await amG(j.ad, { fields: 'effective_status,creative{id,contextual_multi_ads}' });
+    if (!chk.creative || chk.creative.id !== created.id || (chk.creative.contextual_multi_ads || {}).enroll_status !== 'OPT_OUT') throw new Error('Saved, but the check after didn’t match');
+    return { created: created.id, status: chk.effective_status };
+  }
+
   async function draft(j) {
     // Same steps as the dashboard's own draft: campaign copied paused, each ad set copied into it with next month's dates
     // (keeping last month's on/off), each ad made fresh with next month's UTMs and multi-advertiser off, campaign switched on last.
@@ -136,7 +157,7 @@
   window.__amRun = async function (jobs) {
     for (const j of jobs) {
       if (window.__amResults[j.key] && window.__amResults[j.key].ok) continue;
-      try { const r = j.type === 'carousel' ? await carousel(j) : await draft(j); window.__amResults[j.key] = { key: j.key, ok: true, ...r }; }
+      try { const r = j.type === 'carousel' ? await carousel(j) : j.type === 'creative' ? await recaption(j) : await draft(j); window.__amResults[j.key] = { key: j.key, ok: true, ...r }; }
       catch (e) { window.__amResults[j.key] = { key: j.key, ok: false, error: e.message }; }
     }
     return Object.values(window.__amResults);
