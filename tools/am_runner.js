@@ -19,6 +19,11 @@
   const siteOf = (u) => { const m = String(u || '').match(/^https?:\/\/([^/?#\s]+)/i); return m ? m[1].toLowerCase().replace(/^www\./, '') : ''; };
   const landingOf = (c) => { const oss = (c && c.object_story_spec) || {}, ld = oss.link_data || {}, vd = oss.video_data || {}; return ld.link || ((vd.call_to_action || {}).value || {}).link || (((((c && c.asset_feed_spec) || {}).link_urls) || [])[0] || {}).website_url || ''; };
   const fixTagSite = (tags, link) => { const t = siteOf(tags), l = siteOf(link); return t && l && t !== l && !SITE_SKIP.test(t) && !SITE_SKIP.test(l) ? String(tags).replace(/^https?:\/\/[^?#\s]*/i, String(link).match(/^https?:\/\/[^/?#\s]+/i)[0]) : tags; };
+  // house setup: a display link (the site shown under the ad), the landing page's site as written
+  const addDisplayLink = (oss) => { const ld = (oss || {}).link_data, vd = (oss || {}).video_data; const st = (u) => { const m = String(u || '').match(/^https?:\/\/([^/?#\s]+)/i); return m && !SITE_SKIP.test(siteOf(u)) ? m[1].toLowerCase() : ''; };
+    if (ld && !ld.caption) { const s = st(ld.link || ((ld.child_attachments || [])[0] || {}).link); if (s) ld.caption = s; }
+    else if (vd && vd.call_to_action && vd.call_to_action.value && !vd.call_to_action.value.link_caption) { const s = st(vd.call_to_action.value.link); if (s) vd.call_to_action.value.link_caption = s; }
+    return oss; };
 
   async function carousel(j) {
     const ad = await amG(j.ad, { fields: 'id,creative{id}' });
@@ -27,7 +32,8 @@
     const oss = cleanOss(old.object_story_spec);
     if (!oss.link_data || !oss.link_data.child_attachments) throw new Error('Not a carousel');
     oss.link_data.child_attachments = j.cards.map(c => { const o = { link: c.link, name: c.name, description: c.description, call_to_action: c.call_to_action || { type: 'SHOP_NOW' } }; if (c.image_hash) o.image_hash = c.image_hash; else if (c.picture) o.picture = c.picture; if (c.video_id) o.video_id = c.video_id; return o; });
-    if (j.message) oss.link_data.message = j.message;   // a new caption queued with the cards (e.g. the November emojis)
+    if (j.message) oss.link_data.message = j.message;
+    addDisplayLink(oss);   // a new caption queued with the cards (e.g. the November emojis)
     const body = { name: String(old.name || j.name).replace(/\s*\|\s*updated.*$/, '').slice(0, 80) + ' | updated ' + new Date().toISOString().slice(0, 10), object_story_spec: oss, contextual_multi_ads: { enroll_status: 'OPT_OUT' } };
     if (old.degrees_of_freedom_spec) body.degrees_of_freedom_spec = cleanDof(old.degrees_of_freedom_spec);
     const afs = old.asset_feed_spec ? JSON.parse(JSON.stringify(old.asset_feed_spec)) : {}; afs.audios = [{ type: 'opted_out' }]; body.asset_feed_spec = afs;
@@ -73,7 +79,7 @@
           const c = await amG(a.creative.id, { fields: FC + ',object_story_id,effective_object_story_id' });
           let body;
           if (c.object_story_spec) {
-            body = { name: sw(c.name || a.name).slice(0, 100), object_story_spec: cleanOss(c.object_story_spec), contextual_multi_ads: { enroll_status: 'OPT_OUT' } };
+            body = { name: sw(c.name || a.name).slice(0, 100), object_story_spec: addDisplayLink(cleanOss(c.object_story_spec)), contextual_multi_ads: { enroll_status: 'OPT_OUT' } };
             if (c.degrees_of_freedom_spec) body.degrees_of_freedom_spec = cleanDof(c.degrees_of_freedom_spec);
             body.asset_feed_spec = c.asset_feed_spec || { audios: [{ type: 'opted_out' }] };
             if (c.creative_sourcing_spec) body.creative_sourcing_spec = c.creative_sourcing_spec;
