@@ -14,6 +14,11 @@
   const utmMonth = (tags, to) => tags ? String(tags).replace(/(?<![A-Za-z])(January|February|March|April|May|June|July|August|September|October|November|December)(_|%20|\+| )(\d{4})(?!\d)/g, (m, mo, sep) => to.name + sep + to.y) : tags;
   const cleanDof = (dof) => { if (!dof) return dof; const d = JSON.parse(JSON.stringify(dof)); if (d.creative_features_spec && d.creative_features_spec.standard_enhancements) delete d.creative_features_spec.standard_enhancements; return d; };
   const cleanOss = (oss) => { const o = JSON.parse(JSON.stringify(oss)); if (o.video_data && o.video_data.image_hash && o.video_data.image_url) delete o.video_data.image_url; if (o.link_data && o.link_data.image_hash && o.link_data.picture) delete o.link_data.picture; if (o.link_data && o.link_data.child_attachments) for (const ch of o.link_data.child_attachments) if (ch.image_hash && ch.picture) delete ch.picture; if (o.photo_data && o.photo_data.image_hash && o.photo_data.url) delete o.photo_data.url; return o; };
+  // QA, Nov 1 2026 (Evan): the website at the front of the URL parameters is the site the ad links to (a copy can keep another store's)
+  const SITE_SKIP = /^(fb\.me|m\.me|wa\.me|bit\.ly|.*facebook\.com|.*instagram\.com)$/;
+  const siteOf = (u) => { const m = String(u || '').match(/^https?:\/\/([^/?#\s]+)/i); return m ? m[1].toLowerCase().replace(/^www\./, '') : ''; };
+  const landingOf = (c) => { const oss = (c && c.object_story_spec) || {}, ld = oss.link_data || {}, vd = oss.video_data || {}; return ld.link || ((vd.call_to_action || {}).value || {}).link || (((((c && c.asset_feed_spec) || {}).link_urls) || [])[0] || {}).website_url || ''; };
+  const fixTagSite = (tags, link) => { const t = siteOf(tags), l = siteOf(link); return t && l && t !== l && !SITE_SKIP.test(t) && !SITE_SKIP.test(l) ? String(tags).replace(/^https?:\/\/[^?#\s]*/i, String(link).match(/^https?:\/\/[^/?#\s]+/i)[0]) : tags; };
 
   async function carousel(j) {
     const ad = await amG(j.ad, { fields: 'id,creative{id}' });
@@ -27,7 +32,7 @@
     if (old.degrees_of_freedom_spec) body.degrees_of_freedom_spec = cleanDof(old.degrees_of_freedom_spec);
     const afs = old.asset_feed_spec ? JSON.parse(JSON.stringify(old.asset_feed_spec)) : {}; afs.audios = [{ type: 'opted_out' }]; body.asset_feed_spec = afs;
     if (old.creative_sourcing_spec) body.creative_sourcing_spec = old.creative_sourcing_spec;
-    if (old.url_tags) body.url_tags = old.url_tags;
+    if (old.url_tags) body.url_tags = fixTagSite(old.url_tags, landingOf(body));
     const created = await amP(j.acct + '/adcreatives', body);
     await amP(j.ad, { creative: { creative_id: created.id } });
     const chk = await amG(j.ad, { fields: 'effective_status,creative{id,contextual_multi_ads}' });
@@ -75,7 +80,7 @@
           } else if (c.effective_object_story_id || c.object_story_id) {
             body = { name: sw(c.name || a.name).slice(0, 100), object_story_id: c.effective_object_story_id || c.object_story_id, contextual_multi_ads: { enroll_status: 'OPT_OUT' } };
           } else throw new Error('Can’t read the creative of ' + a.name);
-          if (c.url_tags) body.url_tags = utmMonth(c.url_tags, j.to);
+          if (c.url_tags) body.url_tags = fixTagSite(utmMonth(c.url_tags, j.to), landingOf(c));
           const nc = await amP(j.acct + '/adcreatives', body);
           const ad = { name: sw(a.name), adset_id: nsid, creative: { creative_id: nc.id }, status: live && a.configured_status === 'ACTIVE' ? 'ACTIVE' : 'PAUSED' };
           const ts = (a.tracking_specs || []).slice();   // website events on with the client's pixel (QA, Oct 30 2026)
