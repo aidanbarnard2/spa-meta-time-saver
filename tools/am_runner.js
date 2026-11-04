@@ -12,8 +12,22 @@
   const FC = 'id,name,object_story_spec,contextual_multi_ads,degrees_of_freedom_spec,asset_feed_spec,creative_sourcing_spec,url_tags';
   const swap = (s, f, t) => { if (!s) return s; let o = String(s).replace(new RegExp(f.name + '(\\s*)' + f.y, 'gi'), t.name + '$1' + t.y).replace(new RegExp(f.name + '_' + f.y, 'gi'), t.name + '_' + t.y); return o; };
   const utmMonth = (tags, to) => tags ? String(tags).replace(/(?<![A-Za-z])(January|February|March|April|May|June|July|August|September|October|November|December)(_|%20|\+| )(\d{4})(?!\d)/g, (m, mo, sep) => to.name + sep + to.y) : tags;
-  // house setup (Nov 4 2026): media reordering and carousel-to-video always off, so a card's photo can't show under another card's title
-  const cleanDof = (dof) => { const d = JSON.parse(JSON.stringify(dof || {})); const cf = d.creative_features_spec = d.creative_features_spec || {}; delete cf.standard_enhancements; for (const f of ['media_order', 'carousel_to_video']) cf[f] = { enroll_status: 'OPT_OUT' }; return d; };
+  /* house setup (Nov 4 2026): Meta's creative enhancements are off by default; only the comment preview and the profile card
+     stay as they are. Each known enhancement is named as off (Meta switches new ones on by itself), media reordering and
+     carousel-to-video always (a card's photo under another card's title). Same list as the dashboard's HOUSE.baseOff. */
+  const ALLOW = ['inline_comment', 'profile_card'];
+  const BASE_OFF = ['media_order', 'carousel_to_video', 'advantage_plus_creative', 'enhance_cta', 'text_optimizations', 'image_touchups',
+    'reveal_details_over_time', 'show_summary', 'show_destination_blurbs', 'product_extensions', 'ig_video_native_subtitle',
+    'image_background_gen', 'pac_relaxation', 'hide_price', 'product_metadata_automation', 'site_extensions', 'description_automation',
+    'add_text_overlay', 'image_templates', 'image_uncrop', 'image_animation', 'image_brightness_and_contrast', 'video_auto_crop',
+    'video_uncrop', 'text_translation', 'translate_voiceover'];
+  const cleanDof = (dof, presentOnly) => { const d = JSON.parse(JSON.stringify(dof || {})); const cf = d.creative_features_spec = d.creative_features_spec || {}; delete cf.standard_enhancements;
+    for (const [k, v] of Object.entries(cf)) if (v && v.enroll_status === 'OPT_IN' && !ALLOW.includes(k)) cf[k] = { enroll_status: 'OPT_OUT' };
+    for (const f of (presentOnly ? ['media_order', 'carousel_to_video'] : BASE_OFF)) cf[f] = { enroll_status: 'OPT_OUT' }; return d; };
+  // house setup: no Meta-picked music on any ad
+  const musicOff = (afs) => ({ ...(afs ? JSON.parse(JSON.stringify(afs)) : {}), audios: [{ type: 'opted_out' }] });
+  // some creative types reject a feature they don't have; then only the ones the creative already carries are set
+  const createHouse = async (acct, body, oldDof) => { try { return await amP(acct + '/adcreatives', body); } catch (e) { if (!body.degrees_of_freedom_spec) throw e; body.degrees_of_freedom_spec = cleanDof(oldDof, true); try { return await amP(acct + '/adcreatives', body); } catch (e2) { throw e; } } };
   const cleanOss = (oss) => { const o = JSON.parse(JSON.stringify(oss)); if (o.video_data && o.video_data.image_hash && o.video_data.image_url) delete o.video_data.image_url; if (o.link_data && o.link_data.image_hash && o.link_data.picture) delete o.link_data.picture; if (o.link_data && o.link_data.child_attachments) for (const ch of o.link_data.child_attachments) if (ch.image_hash && ch.picture) delete ch.picture; if (o.photo_data && o.photo_data.image_hash && o.photo_data.url) delete o.photo_data.url; return o; };
   // QA, Nov 1 2026 (Evan): the website at the front of the URL parameters is the site the ad links to (a copy can keep another store's)
   const SITE_SKIP = /^(fb\.me|m\.me|wa\.me|bit\.ly|.*facebook\.com|.*instagram\.com)$/;
@@ -37,10 +51,10 @@
     addDisplayLink(oss);   // house setup: the site shown under the ad
     const body = { name: String(old.name || j.name).replace(/\s*\|\s*updated.*$/, '').slice(0, 80) + ' | updated ' + new Date().toISOString().slice(0, 10), object_story_spec: oss, contextual_multi_ads: { enroll_status: 'OPT_OUT' } };
     body.degrees_of_freedom_spec = cleanDof(old.degrees_of_freedom_spec);
-    const afs = old.asset_feed_spec ? JSON.parse(JSON.stringify(old.asset_feed_spec)) : {}; afs.audios = [{ type: 'opted_out' }]; body.asset_feed_spec = afs;
+    body.asset_feed_spec = musicOff(old.asset_feed_spec);
     if (old.creative_sourcing_spec) body.creative_sourcing_spec = old.creative_sourcing_spec;
     if (old.url_tags) body.url_tags = fixTagSite(old.url_tags, landingOf(body));
-    const created = await amP(j.acct + '/adcreatives', body);
+    const created = await createHouse(j.acct, body, old.degrees_of_freedom_spec);
     await amP(j.ad, { creative: { creative_id: created.id } });
     const chk = await amG(j.ad, { fields: 'effective_status,creative{id,contextual_multi_ads}' });
     if (!chk.creative || chk.creative.id !== created.id || (chk.creative.contextual_multi_ads || {}).enroll_status !== 'OPT_OUT') throw new Error('Saved, but the check after didn’t match');
@@ -58,10 +72,10 @@
     part.message = j.message; addDisplayLink(oss);
     const body = { name: String(old.name || j.name).replace(/\s*\|\s*updated.*$/, '').slice(0, 80) + ' | updated ' + new Date().toISOString().slice(0, 10), object_story_spec: oss, contextual_multi_ads: { enroll_status: 'OPT_OUT' } };
     body.degrees_of_freedom_spec = cleanDof(old.degrees_of_freedom_spec);
-    body.asset_feed_spec = old.asset_feed_spec || { audios: [{ type: 'opted_out' }] };
+    body.asset_feed_spec = musicOff(old.asset_feed_spec);
     if (old.creative_sourcing_spec) body.creative_sourcing_spec = old.creative_sourcing_spec;
     if (old.url_tags) body.url_tags = fixTagSite(old.url_tags, landingOf(body));
-    const created = await amP(j.acct + '/adcreatives', body);
+    const created = await createHouse(j.acct, body, old.degrees_of_freedom_spec);
     await amP(j.ad, { creative: { creative_id: created.id } });
     const chk = await amG(j.ad, { fields: 'effective_status,creative{id,contextual_multi_ads}' });
     if (!chk.creative || chk.creative.id !== created.id || (chk.creative.contextual_multi_ads || {}).enroll_status !== 'OPT_OUT') throw new Error('Saved, but the check after didn’t match');
@@ -103,13 +117,13 @@
           if (c.object_story_spec) {
             body = { name: sw(c.name || a.name).slice(0, 100), object_story_spec: addDisplayLink(cleanOss(c.object_story_spec)), contextual_multi_ads: { enroll_status: 'OPT_OUT' } };
             body.degrees_of_freedom_spec = cleanDof(c.degrees_of_freedom_spec);
-            body.asset_feed_spec = c.asset_feed_spec || { audios: [{ type: 'opted_out' }] };
+            body.asset_feed_spec = musicOff(c.asset_feed_spec);
             if (c.creative_sourcing_spec) body.creative_sourcing_spec = c.creative_sourcing_spec;
           } else if (c.effective_object_story_id || c.object_story_id) {
             body = { name: sw(c.name || a.name).slice(0, 100), object_story_id: c.effective_object_story_id || c.object_story_id, contextual_multi_ads: { enroll_status: 'OPT_OUT' } };
           } else throw new Error('Can’t read the creative of ' + a.name);
           if (c.url_tags) body.url_tags = fixTagSite(utmMonth(c.url_tags, j.to), landingOf(c));
-          const nc = await amP(j.acct + '/adcreatives', body);
+          const nc = await createHouse(j.acct, body, c.degrees_of_freedom_spec);
           const ad = { name: sw(a.name), adset_id: nsid, creative: { creative_id: nc.id }, status: live && a.configured_status === 'ACTIVE' ? 'ACTIVE' : 'PAUSED' };
           const ts = (a.tracking_specs || []).slice();   // website events on with the client's pixel (QA, Oct 30 2026)
           if (j.pixel && !ts.some(t => (t.fb_pixel || []).map(String).includes(String(j.pixel)))) ts.unshift({ 'action.type': ['offsite_conversion'], fb_pixel: [String(j.pixel)] });
