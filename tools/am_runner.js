@@ -143,7 +143,7 @@
 
   /* the queue lives in the dashboard (another site), so a real click here opens the dashboard as a popup and the two pages
      message each other: the dashboard sends the waiting jobs, and gets the results back to mark them done */
-  const DASH = 'https://aidanbarnard2.github.io';
+  const DASH = 'https://saintpaulagency.github.io';
   if (!window.__amListening) {
     window.__amListening = true;
     window.addEventListener('message', (e) => {
